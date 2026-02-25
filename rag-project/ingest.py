@@ -14,7 +14,11 @@ def ingest_pdf(pdf_path):
     chunks = splitter.split_documents(documents)
     
     # Embeddings aur DB
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEndpointEmbeddings(
+    huggingfacehub_api_token=os.getenv("HF_TOKEN"),
+    model="sentence-transformers/all-MiniLM-L6-v2"
+)
+    
     db = Chroma.from_documents(chunks, embeddings, persist_directory="./chroma_db")
     
     print(f"Done! {len(chunks)} chunks saved.")

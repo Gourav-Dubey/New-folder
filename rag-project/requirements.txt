@@ -4,10 +4,10 @@ langchain
 langchain-community
 langchain-groq
 langchain-chroma
-langchain-huggingface
+huggingface-hub
 langchain-text-splitters
 pypdf
 chromadb
-sentence-transformers
+langchain-huggingface
 python-dotenv
 python-multipart

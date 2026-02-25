@@ -9,7 +9,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def ask_question(question):
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEndpointEmbeddings(
+    huggingfacehub_api_token=os.getenv("HF_TOKEN"),
+    model="sentence-transformers/all-MiniLM-L6-v2"
+)
     db = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
     retriever = db.as_retriever()
     
