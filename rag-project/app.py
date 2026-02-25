@@ -134,7 +134,7 @@ app = FastAPI()
 # ✅ Proper CORS Setup
 origins = [
     "http://localhost:5173",
-     "https://pdfchatbo.netlify.app", 
+    "https://pdfchatbo.netlify.app", 
 ]
 
 app.add_middleware(
@@ -192,7 +192,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         db_instance = Chroma.from_documents(
             chunks,
             embeddings,
-            persist_directory="./chroma_db"
+            persist_directory="/tmp/chroma_db"
         )
 
         return {"message": f"PDF uploaded! {len(chunks)} chunks processed."}
@@ -207,7 +207,7 @@ async def ask_question(request: QuestionRequest):
 
     if db_instance is None:
         db_instance = Chroma(
-            persist_directory="./chroma_db",
+            persist_directory="/tmp/chroma_db",
             embedding_function=embeddings
         )
 
