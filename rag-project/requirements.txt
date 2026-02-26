@@ -11,3 +11,4 @@ chromadb
 langchain-huggingface
 python-dotenv
 python-multipart
+tavily-python

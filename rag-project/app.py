@@ -19,10 +19,10 @@
 
 # app = FastAPI()
 
-# # ✅ Proper CORS Setup
+# # ✅ CORS
 # origins = [
 #     "http://localhost:5173",
-#     "https://pdfchatbo.netlify.app", 
+#     "https://pdfchatbo.netlify.app",
 # ]
 
 # app.add_middleware(
@@ -33,12 +33,17 @@
 #     allow_headers=["*"],
 # )
 
-# # ✅ Check HF Token
+# # ✅ Check Environment Variables
 # HF_TOKEN = os.getenv("HF_TOKEN")
+# GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
 # if not HF_TOKEN:
 #     raise ValueError("HF_TOKEN not found in environment variables")
 
-# # ✅ Embedding (Cloud Based - No Local Model)
+# if not GROQ_API_KEY:
+#     raise ValueError("GROQ_API_KEY not found in environment variables")
+
+# # ✅ Cloud Embeddings (No local torch needed)
 # embeddings = HuggingFaceEndpointEmbeddings(
 #     huggingfacehub_api_token=HF_TOKEN,
 #     model="sentence-transformers/all-MiniLM-L6-v2"
@@ -46,27 +51,32 @@
 
 # db_instance = None
 
+
 # class QuestionRequest(BaseModel):
 #     question: str
 
 
+# # =========================
+# # 📤 UPLOAD ROUTE
+# # =========================
 # @app.post("/upload")
 # async def upload_pdf(file: UploadFile = File(...)):
 #     global db_instance
 
 #     try:
-#         # Save uploaded file
-#         with open("uploaded.pdf", "wb") as f:
-#             shutil.copyfileobj(file.file, f)
-
+#         # Reset memory
 #         db_instance = None
 
-#         # Delete old DB
-#         if os.path.exists("./chroma_db"):
-#             shutil.rmtree("./chroma_db", ignore_errors=True)
+       
+        
+
+#         # Save new PDF
+#         pdf_path = "/tmp/uploaded.pdf"
+#         with open(pdf_path, "wb") as f:
+#             shutil.copyfileobj(file.file, f)
 
 #         # Load PDF
-#         loader = PyPDFLoader("uploaded.pdf")
+#         loader = PyPDFLoader(pdf_path)
 #         documents = loader.load()
 
 #         # Split into chunks
@@ -76,28 +86,31 @@
 #         )
 #         chunks = splitter.split_documents(documents)
 
-#         # Create new vector DB
+#         # Create NEW DB only for this PDF
 #         db_instance = Chroma.from_documents(
 #             chunks,
 #             embeddings,
-#             persist_directory="/tmp/chroma_db"
+            
 #         )
 
-#         return {"message": f"PDF uploaded! {len(chunks)} chunks processed."}
+#         return {
+#             "message": f"PDF uploaded successfully!",
+#             "chunks": len(chunks)
+#         }
 
 #     except Exception as e:
 #         raise HTTPException(status_code=500, detail=str(e))
 
 
+# # =========================
+# # 💬 ASK ROUTE
+# # =========================
 # @app.post("/ask")
 # async def ask_question(request: QuestionRequest):
 #     global db_instance
 
 #     if db_instance is None:
-#         db_instance = Chroma(
-#             persist_directory="/tmp/chroma_db",
-#             embedding_function=embeddings
-#         )
+#         return {"answer": "Please upload a PDF first."}
 
 #     retriever = db_instance.as_retriever()
 
@@ -107,19 +120,17 @@
 #     )
 
 #     prompt = ChatPromptTemplate.from_template("""
-# You are a helpful PDF assistant. Answer based ONLY on the context provided.
+# You are a helpful PDF assistant.
 
-# Rules:
-# - ALWAYS respond in English only
-# - Be concise and to the point
-# - If asked casual questions like "hello", just greet back simply
-# - Use bullet points only when listing multiple items
-# - Max 8-10 lines for simple questions
-# - Don't add unnecessary filler text
+# - Answer ONLY from the context.
+# - If answer not found, say:
+#   "This information is not present in the uploaded PDF."
 
-# Context: {context}
+# Context:
+# {context}
 
-# Question: {question}
+# Question:
+# {question}
 
 # Answer:
 # """)
@@ -131,16 +142,18 @@
 #         | StrOutputParser()
 #     )
 
-#     try:
-#         answer = chain.invoke(request.question)
-#         return {"answer": answer}
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
+#     answer = chain.invoke(request.question)
+#     return {"answer": answer}
 
+
+    
 
 # @app.get("/")
 # def root():
 #     return {"status": "RAG API running!"} 
+
+
+# uvicorn app:app --reload
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -156,6 +169,7 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
+from langchain_community.tools.tavily_search import TavilySearchResults
 
 from dotenv import load_dotenv
 
@@ -180,24 +194,32 @@ app.add_middleware(
 # ✅ Check Environment Variables
 HF_TOKEN = os.getenv("HF_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 if not HF_TOKEN:
     raise ValueError("HF_TOKEN not found in environment variables")
-
 if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY not found in environment variables")
+if not TAVILY_API_KEY:
+    raise ValueError("TAVILY_API_KEY not found in environment variables")
 
-# ✅ Cloud Embeddings (No local torch needed)
+# ✅ Cloud Embeddings
 embeddings = HuggingFaceEndpointEmbeddings(
     huggingfacehub_api_token=HF_TOKEN,
     model="sentence-transformers/all-MiniLM-L6-v2"
 )
+
+# ✅ Search Tool
+search_tool = TavilySearchResults(max_results=5)
 
 db_instance = None
 
 
 class QuestionRequest(BaseModel):
     question: str
+
+class SearchRequest(BaseModel):
+    query: str
 
 
 # =========================
@@ -208,34 +230,21 @@ async def upload_pdf(file: UploadFile = File(...)):
     global db_instance
 
     try:
-        # Reset memory
         db_instance = None
-
-       
-        
-
-        # Save new PDF
         pdf_path = "/tmp/uploaded.pdf"
         with open(pdf_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
 
-        # Load PDF
         loader = PyPDFLoader(pdf_path)
         documents = loader.load()
 
-        # Split into chunks
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=300,
             chunk_overlap=20
         )
         chunks = splitter.split_documents(documents)
 
-        # Create NEW DB only for this PDF
-        db_instance = Chroma.from_documents(
-            chunks,
-            embeddings,
-            
-        )
+        db_instance = Chroma.from_documents(chunks, embeddings)
 
         return {
             "message": f"PDF uploaded successfully!",
@@ -258,10 +267,7 @@ async def ask_question(request: QuestionRequest):
 
     retriever = db_instance.as_retriever()
 
-    llm = ChatGroq(
-        model="llama-3.3-70b-versatile",
-        temperature=0
-    )
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
 
     prompt = ChatPromptTemplate.from_template("""
 You are a helpful PDF assistant.
@@ -290,7 +296,45 @@ Answer:
     return {"answer": answer}
 
 
-    
+# =========================
+# 🔍 WEB SEARCH ROUTE
+# =========================
+@app.post("/search")
+async def web_search(request: SearchRequest):
+    try:
+        llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+        results = search_tool.invoke(request.query)
+
+        context = "\n\n".join([f"Source: {r['url']}\n{r['content']}" for r in results])
+
+        prompt = ChatPromptTemplate.from_template("""
+You are a helpful assistant. Answer based on these web search results.
+
+Rules:
+- Respond in English only
+- Be concise and clear
+- Max 6-8 lines
+
+Search Results:
+{context}
+
+Question:
+{question}
+
+Answer:
+""")
+
+        chain = prompt | llm | StrOutputParser()
+
+        answer = chain.invoke({"context": context, "question": request.query})
+        return {
+            "answer": answer,
+            "sources": [r['url'] for r in results]
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/")
 def root():
